@@ -3,7 +3,7 @@
 
 # I need IMAX Seats (╯°□°)╯︵ ┻━┻
 
-# Website Change Notifier
+# IMAX Seats Notifier
 
 This Python script monitors a [Traumpalast Website](https://leonberg.traumpalast.de/) and sends a notification to a Discord channel whenever the content of the website changes.
 

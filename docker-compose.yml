@@ -1,0 +1,9 @@
+version: '3'
+services:
+  app:
+    build: .
+    environment:
+      - TARGET_URL=${TARGET_URL}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+    env_file:
+      - .env

@@ -7,9 +7,17 @@ import sched
 import time
 import datetime
 from hashlib import md5
+import logging
 
 # load environment variables
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
 
 s = sched.scheduler(time.time, time.sleep)
 
@@ -55,20 +63,26 @@ def check_website(sc):
         send_discord_alert('Failed to check the website content')
 
     if check_day_body_change(page_html):
-        print(now.strftime("[%H:%M:%S] Content has changed! (" + str(status_code) + ")"))
+        logging.info("Content has changed! (%s)", status_code)
         send_discord_alert('Website content has changed!')
     else:
-        print(now.strftime("[%H:%M:%S] No changes. (" + str(status_code) + ")"))
+        logging.info("No changes. (%s)", status_code)
 
     # check every 30 seconds
     s.enter(30, 1, check_website, (sc,))
 
 def send_discord_alert(msg):
     now = datetime.datetime.now()
-    msg_to_send = now.strftime("[%H:%M:%S] " + msg )
+    msg_to_send = now.strftime("[%H:%M:%S] " + msg)
     webhook = DiscordWebhook(url=DISCORD_WEBHOOK_URL, content=msg_to_send)
     response = webhook.execute()
 
-print(datetime.datetime.now().strftime("[%H:%M:%S] Script started"))
-s.enter(0, 1, check_website, (s,))
-s.run()
+try:
+    logging.info('IMAX Seat crawler started 🤖')
+    send_discord_alert('IMAX Seat crawler started 🤖')
+    s.enter(0, 1, check_website, (s,))
+    s.run()
+except Exception as e:
+    logging.error('IMAX Seat crawler crashed: %s', str(e))
+    send_discord_alert(f'IMAX Seat crawler crashed: {str(e)}')
+    raise e

@@ -5,5 +5,7 @@ services:
     environment:
       - TARGET_URL=${TARGET_URL}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+    volumes:
+      - /etc/localtime:/etc/localtime:rbo
     env_file:
       - .env

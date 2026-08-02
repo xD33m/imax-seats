@@ -1,11 +1,19 @@
-version: '3'
 services:
-  app:
+  notifier:
     build: .
-    environment:
-      - TARGET_URL=${TARGET_URL}
-      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
-    volumes:
-      - /etc/localtime:/etc/localtime:rbo
+    image: imax-seats
+    restart: unless-stopped
     env_file:
       - .env
+    environment:
+      # keep the state on the host so a restart does not re-announce everything
+      STATE_FILE: /data/state.json
+      HEALTH_FILE: /data/health
+      TZ: ${TZ:-Europe/Berlin}
+    volumes:
+      - ./data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

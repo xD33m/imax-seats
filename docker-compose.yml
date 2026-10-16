@@ -1,7 +1,9 @@
 services:
   notifier:
+    # prebuilt multi-arch image (amd64/arm64); `docker compose up -d --build`
+    # builds from source instead
+    image: ghcr.io/xd33m/imax-seats:latest
     build: .
-    image: imax-seats
     restart: unless-stopped
     env_file:
       - .env

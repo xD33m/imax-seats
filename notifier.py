@@ -22,10 +22,10 @@ import signal
 import sys
 import threading
 import time
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Sequence
 from urllib.parse import urljoin
 
 import requests
@@ -134,7 +134,7 @@ class Config:
     )
 
     @classmethod
-    def from_env(cls) -> "Config":
+    def from_env(cls) -> Config:
         target_url = _env_str("TARGET_URL")
         webhook_url = _env_str("DISCORD_WEBHOOK_URL")
         ntfy_topic = _env_str("NTFY_TOPIC")
@@ -346,7 +346,7 @@ class State:
     known: bool = False  # False until a first successful check was stored
 
     @classmethod
-    def load(cls, path: Path) -> "State":
+    def load(cls, path: Path) -> State:
         state = cls(path=path)
         if not path.exists():
             LOG.info("no state file at %s, starting fresh", path)
@@ -613,7 +613,7 @@ class Notifier:
             for channel in self.channels
         ]
         if results and not all(results):
-            failed = [c.name for c, ok in zip(self.channels, results) if not ok]
+            failed = [c.name for c, ok in zip(self.channels, results, strict=True) if not ok]
             LOG.error("delivery failed for: %s", ", ".join(failed))
         return any(results)
 

@@ -522,7 +522,7 @@ def test_missing_version_is_not_a_crash(watcher, site):
 
 def test_page_errors_propagate_to_the_loop(watcher, site):
     site.status = 503
-    with pytest.raises(Exception):
+    with pytest.raises(n.requests.HTTPError):
         watcher.check()
 
 

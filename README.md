@@ -1,14 +1,25 @@
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 # I need IMAX Seats (╯°□°)╯︵ ┻━┻
 
-Watches a [Traumpalast](https://leonberg.traumpalast.de/) film page and pings a
-Discord channel as soon as new showtimes appear for **one specific screening
-version** — by default the German IMAX one, not the original-language version.
+A small self-hosted watcher that pings Discord and/or your phone (ntfy) the
+moment a [Traumpalast](https://leonberg.traumpalast.de/) cinema publishes new
+showtimes for **one specific screening version**, by default German-language IMAX.
 
-The cinema publishes the next two weeks of showtimes, usually on Mondays. This
-notifier polls the page, compares the showtimes it finds against the ones it has
-already seen, and posts only the difference:
+[![CI](https://github.com/xD33m/imax-seats/actions/workflows/ci.yml/badge.svg)](https://github.com/xD33m/imax-seats/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Image](https://img.shields.io/badge/ghcr.io-xd33m%2Fimax--seats-blue?logo=docker)](https://github.com/xD33m/imax-seats/pkgs/container/imax-seats)
+
+## Why it exists
+
+The cinema publishes the next two weeks of showtimes in batches, usually on
+Mondays, and a film page mixes several versions (`Standardfassung`, `IMAX`,
+`Originalversion`, `IMAX (Originalversion)`, ...). Refreshing that page by hand
+to catch the one version and the few dates you care about is tedious. This
+watcher polls the page, compares the showtimes of exactly that version with the
+ones it has already seen, and posts only the difference.
+
+## What an alert looks like
+
+New showtimes (each time links straight to its ticket page):
 
 ```
 🎬 Die Odyssee — 5 new IMAX (Deutsch) showtimes!
@@ -19,13 +30,9 @@ Di, 11.08. — 14:30
 Mi, 12.08. — 14:30 · 19:00
 ```
 
-Each time links straight to its ticket page.
-
-## Dates you actually want
-
-Set `WATCH_DATES` to the days you are trying to book. Those get their own
-alert, separate from the general listing, with a `MENTION` prefix so your phone
-pushes even if the channel is set to *Only @mentions*:
+A date you are trying to book (`WATCH_DATES`) gets its own alert, with a
+`MENTION` prefix so your phone pushes even if the channel is set to
+*Only @mentions*:
 
 ```
 @everyone 🎯 Die Odyssee is now bookable on Sa, 22.08, So, 23.08 (IMAX (Deutsch))!
@@ -33,86 +40,81 @@ pushes even if the channel is set to *Only @mentions*:
 🎯 So, 23.08. — 10:00 · 19:00
 ```
 
-A watched date is announced the first time it appears on the page at all — not
-only when a showtime is "new" — so adding a date later still alerts you, and a
-date that gets pulled and re-published alerts again. It is announced once, and
-the state file remembers that across restarts.
+## Features
 
-## How it picks the right showtimes
+- **Exact version matching.** The `<h4 class="version">` heading is matched on
+  title *and* language line, so `VERSION_TITLE=IMAX` never picks up
+  `IMAX (Originalversion)`.
+- **Only the diff.** Showtimes are keyed by start time and persisted to a state
+  file, so restarts and changed ticket IDs do not cause duplicate alerts.
+- **Watched dates.** A watched date is announced the first time it appears on
+  the page at all, not only when a showtime is "new". Adding a date later still
+  alerts you, and a date that is pulled and re-published alerts again.
+- **Two channels.** Discord webhook and [ntfy](https://ntfy.sh/) push, usable
+  together. Watched-date alerts go to ntfy at max priority and tap through to a
+  ticket page.
+- **Back on sale.** Optionally reports a sold-out screening becoming bookable
+  again.
+- **Failure handling.** HTTP retries with timeouts, capped exponential backoff,
+  one warning per outage plus a recovery message, atomic state writes, and
+  SIGTERM handling.
+- **Container-ready.** Non-root image for `linux/amd64` and `linux/arm64`
+  (e.g. a Raspberry Pi), with a healthcheck based on a liveness file.
 
-The film page lists every version under an `<h4 class="version">` heading —
-`Standardfassung`, `IMAX`, `Originalversion`, `IMAX (Originalversion)` and so
-on. The notifier matches that heading **exactly** (title *and* the language
-line below it), then reads only the showtimes underneath it. That is why
-`VERSION_TITLE=IMAX` never picks up `IMAX (Originalversion)`.
+## Quick start (Docker Compose)
 
-Showtimes are identified by their start time, so re-published listings or
-changed ticket IDs do not cause duplicate alerts. Seen showtimes are written to
-`STATE_FILE`, which means a restart stays quiet instead of announcing the whole
-programme again.
+```bash
+git clone https://github.com/xD33m/imax-seats.git
+cd imax-seats
+cp .env.example .env   # then fill in TARGET_URL and DISCORD_WEBHOOK_URL and/or NTFY_TOPIC
+```
 
-Besides new showtimes it also reports a sold-out screening becoming bookable
-again, and warns you on Discord if the site has been unreachable for several
-checks in a row.
+`TARGET_URL` is the film page you want to watch: open the film on the
+Traumpalast site and copy the URL. `DISCORD_WEBHOOK_URL` comes from your Discord
+channel under *Settings → Integrations → Webhooks → New Webhook*.
+
+The container runs as UID `10001` and keeps its state in `./data`. On Linux,
+create that directory with the right owner first:
+
+```bash
+mkdir -p data && sudo chown 10001:10001 data
+```
+
+Check that it sees the right showtimes, verify your channels, then start it:
+
+```bash
+docker compose run --rm notifier python notifier.py --show          # print showtimes, no messages
+docker compose run --rm notifier python notifier.py --test-notify   # one test message per channel
+docker compose up -d
+docker compose logs -f
+```
+
+`docker compose up -d` pulls the prebuilt image `ghcr.io/xd33m/imax-seats:latest`.
+To build from source instead, run `docker compose up -d --build`.
+
+### Without Docker
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+python notifier.py --show   # compare against the row on the website
+python notifier.py
+```
 
 ## Getting it onto your phone
 
-Two channels, usable together — an alert counts as delivered if at least one
-of them accepts it, so a broken channel never blocks or duplicates the other.
+An alert counts as delivered if at least one channel accepts it, so a broken
+channel never blocks or duplicates the other.
 
 **Discord** (`DISCORD_WEBHOOK_URL`) works if the channel is set to *All
 Messages*; if it is on *Only @mentions*, set `MENTION=@everyone` so watched-date
 alerts still push.
 
-**ntfy.sh** (`NTFY_TOPIC`) is the more reliable option and needs no account:
-install the [ntfy app](https://ntfy.sh/), subscribe to a topic, and put that
-topic in `.env`. Watched-date alerts go out at max priority (audible through
-Do Not Disturb on Android) and tapping the notification opens the ticket page
-directly. Topics are **public to anyone who knows the name**, so use a long
-random one — the notifier never sends anything but showtimes, but pick
-`imax-seats-<random>` rather than `imax`.
-
-Verify either one with:
-
-```bash
-python notifier.py --test-notify
-```
-
-## Setup
-
-```bash
-git clone https://github.com/xD33m/imax-seats.git
-cd imax-seats
-pip install -r requirements.txt
-cp .env.example .env   # then fill in TARGET_URL and DISCORD_WEBHOOK_URL
-```
-
-`TARGET_URL` is the film page you want to watch — open the film on the
-Traumpalast site and copy the URL. `DISCORD_WEBHOOK_URL` comes from your Discord
-channel under *Settings → Integrations → Webhooks → New Webhook*.
-
-Check that it sees the right showtimes before letting it run:
-
-```bash
-python notifier.py --show
-```
-
-That prints the showtimes of the configured version, says whether each watched
-date is listed yet, and exits — no Discord message, no state file. Compare it
-against the row on the website. Then:
-
-```bash
-python notifier.py
-```
-
-### Docker
-
-```bash
-docker compose up -d --build
-```
-
-State lives in `./data` on the host, so the container can be recreated without
-re-announcing everything. Logs: `docker compose logs -f`.
+**ntfy** (`NTFY_TOPIC`) needs no account: install the [ntfy app](https://ntfy.sh/),
+subscribe to a topic, and put that topic in `.env`. Watched-date alerts go out
+at max priority (audible through Do Not Disturb on Android) and tapping the
+notification opens the ticket page directly. Topics are **public to anyone who
+knows the name**, so use a long random one such as `imax-seats-<random>`.
 
 ## Configuration
 
@@ -142,6 +144,8 @@ list.
 | `HTTP_RETRIES` | `3` | Retries per HTTP request |
 | `HEARTBEAT_HOURS` | `0` | "Still alive" message every N hours (0 = off) |
 
+The Docker image sets `STATE_FILE=/data/state.json` and `HEALTH_FILE=/data/health`.
+
 To watch the English IMAX version instead:
 
 ```
@@ -149,7 +153,7 @@ VERSION_TITLE=IMAX (Originalversion)
 VERSION_LANGUAGE=Originalsprache
 ```
 
-## Command line
+### Command line
 
 ```
 python notifier.py                 # run the watcher
@@ -166,28 +170,70 @@ python notifier.py --verbose       # debug logging
 */5 * * * * cd /opt/imax-seats && python notifier.py --once >> watch.log 2>&1
 ```
 
-## Behaviour worth knowing
+## How it works
 
-- **Failures do not lose alerts.** If Discord cannot be reached, the state file
-  is not advanced, so the same showtimes are reported on the next check.
-- **Backoff.** Repeated failures back off exponentially up to `MAX_BACKOFF`,
-  and only one warning is posted per outage, followed by a recovery message.
+```mermaid
+flowchart LR
+    A[Poll film page<br/>every CHECK_INTERVAL] --> B[Decode HTML<br/>utf-8 / cp1252]
+    B --> C["Find h4.version matching<br/>VERSION_TITLE + VERSION_LANGUAGE"]
+    C --> D[Diff showtimes against<br/>state.json]
+    D -->|new / watched date /<br/>back on sale| E[Notifier]
+    E --> F[Discord webhook]
+    E --> G[ntfy push]
+    E -->|at least one channel<br/>accepted| H[Save state.json]
+    E -->|every channel failed| R[Keep old state,<br/>retry next cycle]
+```
+
+After every successful check the watcher touches `HEALTH_FILE`; the Docker
+healthcheck marks the container unhealthy once that file is older than five
+polling intervals.
+
+Everything lives in a single module, [`notifier.py`](notifier.py):
+`parse_page` extracts the showings of the configured version, `diff` compares
+them with the persisted `State`, and `Watcher.check` decides which alerts to send
+through `Notifier`, which fans out to the `DiscordChannel` and `NtfyChannel`.
+
+## Behaviour and trade-offs
+
+- **Failures do not lose alerts.** If no channel accepts a message, the state
+  file is not advanced, so the same showtimes are reported on the next check.
+- **Backoff.** Repeated failures back off exponentially up to `MAX_BACKOFF`, and
+  only one warning is posted per outage, followed by a recovery message.
 - **Encoding.** The Traumpalast server declares `charset=utf-8` but actually
-  sends cp1252; the notifier decodes defensively rather than trusting either.
+  sends cp1252; the page is decoded defensively rather than trusting either.
 - **Missing version.** If the version disappears from the page (e.g. the film
   stops running in IMAX), that is logged once and nothing is announced.
+- **Tied to one site's markup.** Parsing relies on Traumpalast's
+  `h4.version` / `.day-time` / `<time datetime>` structure. A redesign of the
+  site will break it; the test fixture makes such a break easy to spot.
+- **Polling, not push.** The cinema offers no feed, so the watcher polls. Keep
+  `CHECK_INTERVAL` reasonable (default 120 s) to stay polite to the site.
+- **One film and one version per instance.** Run several containers with
+  different `.env` files and state directories to watch more.
+- **Seat availability is coarse.** The watcher only knows what the film page
+  shows (a showtime is bookable or sold out), not individual seats.
 
 ## Tests
 
 ```bash
 pip install -r requirements-dev.txt
+ruff check .
 pytest
 ```
 
 The suite parses a saved copy of a real film page and runs the watcher against a
 local HTTP server that impersonates both the cinema and Discord, including the
-Monday case where a second week of showtimes appears.
+Monday case where a second week of showtimes appears. CI runs lint and tests on
+every push and pull request, then builds the multi-arch image and publishes it to
+GHCR from `main` and from `v*` tags.
+
+## How this was built
+
+The first version (2023) was a simple page-hash checker. The 2026 rewrite into
+the version-aware watcher described here was developed with an AI coding
+assistant (Claude). The author reviewed the changes, and the behaviour is covered
+by the test suite in this repository.
 
 ## License
 
-MIT License
+[MIT](LICENSE)
